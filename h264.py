@@ -5,7 +5,8 @@ def h264_decode(in_filename, out_filename, **ffmpeg_kwargs):
     return (
         ffmpeg
         .input(in_filename)['v']
-        .output(out_filename, vcodec='rawvideo', map='0:v:0', **ffmpeg_kwargs)
+        .output(out_filename, vcodec='rawvideo', pixel_format='yuv420p', map='0:v:0', **ffmpeg_kwargs)
+        .overwrite_output()
         .run(capture_stdout=True)
     )[0]
 
@@ -15,6 +16,7 @@ def h264_encode(in_filename, out_filename, **ffmpeg_kwargs):
         ffmpeg
         .input(in_filename)
         .output(out_filename, vcodec='libx264', map='0:v:0', **ffmpeg_kwargs)
+        .overwrite_output()
         .run(capture_stdout=True)
     )[0]
 
@@ -26,6 +28,7 @@ def get_jpeg_frame(in_video_filename, out_jpeg_filename, frame_num):
         .input(in_video_filename)
         .filter('select', 'gte(n, {})'.format(frame_num))
         .output(out_jpeg_filename, vframes=1, format='image2', vcodec='mjpeg')
+        .overwrite_output()
         .run(capture_stdout=True)
     )[0]
 
@@ -39,6 +42,7 @@ def get_yuv420_frame(in_video_filename, out_yuv_filename, frame_num):
         .input(in_video_filename)
         .filter('select', 'gte(n, {})'.format(frame_num))
         .output(out_yuv_filename, vframes=1, format='rawvideo', pixel_format='yuv420p', s=str(width) + 'x' + str(height))
+        .overwrite_output()
         .run(capture_stdout=True)
     )[0]
 
