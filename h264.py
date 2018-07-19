@@ -34,8 +34,30 @@ class VideoFrame:
         else:
             self.data = b'\x00' * math.ceil(width * height * 12 / 8)
 
+class H264_Payload_Descriptor:
+    def __init__(self):
+        pass
+
+    def __bytes__(self):
+        pass
+
+    def __repr__(self):
+        pass
+
+    @classmethod
+    def parse(cls, data):
+        pass
+
 class H264_Decoder:
-    pass
+    def __init__(self):
+        pass
+
+    def decode(self, payloads):
+        pass
 
 class H264_Encoder:
-    pass
+    def __init__(self):
+        pass
+
+    def encode(self, frames):
+        pass
