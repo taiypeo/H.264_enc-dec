@@ -1,16 +1,27 @@
 import h264
-
+import av
 if __name__ == "__main__":
-    frame_size = h264.get_video_frame_size('in.mp4')
+    container = av.open('in.mp4')
+    frames = list(container.decode(video=0))
+    new_frames = []
 
-    # Encoding/decoding
-    h264.decode('in.mp4', 'decoded.yuv')
-    h264.encode('decoded.yuv', 'encoded.mp4', frame_size=frame_size)
+    for i in range(300, 325):
+        frame = frames[i]
+        data = h264.__data_from_av_frame(frame)
+        new_frame = h264.__data_to_av_frame(data, 1920, 800)
+        new_frames.append(new_frame)
 
-    # Saving frames from the raw YUV420 video
-    h264.get_yuv420_frame('decoded.yuv', 'yuv_frame.yuv', 300, frame_size)
-    h264.get_jpeg_frame('decoded.yuv', 'yuv_frame.jpg', 300, frame_size)
+    out_container = av.open('out.yuv', mode='w')
+    stream = out_container.add_stream('rawvideo', rate=24)
+    stream.width = 1920
+    stream.height = 800
+    stream.pix_fmt = 'yuv420p'
 
-    # Saving frames from the H.264 encoded video
-    h264.get_yuv420_frame('encoded.mp4', 'mp4_frame.yuv', 300)
-    h264.get_jpeg_frame('encoded.mp4', 'mp4_frame.jpg', 300)
+    for frame in new_frames:
+        for packet in stream.encode(frame):
+            out_container.mux(packet)
+
+    for packet in stream.encode():
+        out_container.mux(packet)
+
+    out_container.close()

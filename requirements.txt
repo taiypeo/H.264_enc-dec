@@ -1,2 +1,1 @@
-ffmpeg-python==0.1.16
-future==0.16.0
+av==0.4.1
