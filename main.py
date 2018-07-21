@@ -1,16 +1,19 @@
-import h264
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst, GObject
 
-if __name__ == "__main__":
-    frame_size = h264.get_video_frame_size('in.mp4')
+from h264 import *
 
-    # Encoding/decoding
-    h264.decode('in.mp4', 'decoded.yuv')
-    h264.encode('decoded.yuv', 'encoded.mp4', frame_size=frame_size)
+if __name__ == '__main__':
+    Gst.init(None)
 
-    # Saving frames from the raw YUV420 video
-    h264.get_yuv420_frame('decoded.yuv', 'yuv_frame.yuv', 300, frame_size)
-    h264.get_jpeg_frame('decoded.yuv', 'yuv_frame.jpg', 300, frame_size)
+    frames = []
+    for i in range(58):
+        file = open('test/frame' + str(i) + '.yuv', 'rb')
+        data = file.read()
+        file.close()
+        frames.append(VideoFrame(640, 480, data))
+    encoder = H264_Encoder()
+    encoder.encode(frames)
 
-    # Saving frames from the H.264 encoded video
-    h264.get_yuv420_frame('encoded.mp4', 'mp4_frame.yuv', 300)
-    h264.get_jpeg_frame('encoded.mp4', 'mp4_frame.jpg', 300)
+    GObject.MainLoop().run()
