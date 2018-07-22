@@ -4,6 +4,8 @@ from gi.repository import Gst
 
 import math
 
+MAX_BUFFERS = 100
+
 class VideoFrame:
     def __init__(self, width, height, data=None):
         self.width = width
@@ -57,6 +59,10 @@ class H264_Encoder:
         x264_encoder = Gst.ElementFactory.make('x264enc')
         rtp_payloader = Gst.ElementFactory.make('rtph264pay')
         appsink = Gst.ElementFactory.make('appsink')
+        appsink.set_property("drop", True)
+        appsink.set_property("max-buffers", MAX_BUFFERS)
+        appsink.set_property("sync", True)
+        appsink.set_property("emit-signals", True)
 
         pipeline.add(appsrc)
         pipeline.add(capsfilter)
@@ -77,10 +83,41 @@ class H264_Encoder:
     Encodes raw video frames with H.264 and puts the result in RTP packages
 
     :param frames: list of VideoFrame objects
-    :returns: binary representation of RTP packages
+    :returns: list of binary representations of RTP payloads
     '''
     def encode(self, frames):
-        pipeline, appsrc, appsink = self.__create_pipeline(frames, 28, 'YUY2')
-        # do stuff
+        pipeline, appsrc, appsink = self.__create_pipeline(frames, 28, 'YUY2') # TODO: change parameters later
 
-        pipeline.set_state(Gst.State.PLAYING)
+        payloads = []
+        def get_appsink_data(sink):
+            sample = sink.emit('pull-sample')
+            if not sample:
+                return
+            buf = sample.get_buffer()
+            status, info = buf.map(Gst.MapFlags.READ)
+            if not status:
+                raise Exception('H264_Encoder error: failed to map buffer data to GstMapInfo')
+            payloads.append(info.data)
+            buf.unmap(info)
+
+            return 0
+
+        appsink.connect('new-sample', get_appsink_data)
+
+        state = pipeline.set_state(Gst.State.PLAYING)
+        if state == Gst.StateChangeReturn.FAILURE:
+            raise Exception('H264_Encoder error: failed to set pipeline\'s state to PLAYING')
+
+        bus = pipeline.get_bus()
+        msg = bus.timed_pop_filtered(Gst.CLOCK_TIME_NONE,
+            Gst.MessageType.ERROR | Gst.MessageType.EOS)
+        if msg:
+            if msg.type == Gst.MessageType.ERROR:
+                err, _ = msg.parse_error()
+                raise Exception('H264_Encoder error: pipeline failure: ' + err)
+            elif msg.type != Gst.MessageType.EOS:
+                raise Exception('H264_Encoder error: pipeline failure: unknown error')
+
+        pipeline.set_state(Gst.State.NULL)
+
+        return payloads

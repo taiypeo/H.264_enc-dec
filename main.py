@@ -14,6 +14,6 @@ if __name__ == '__main__':
         file.close()
         frames.append(VideoFrame(640, 480, data))
     encoder = H264_Encoder()
-    encoder.encode(frames)
+    payloads = encoder.encode(frames)
 
     GObject.MainLoop().run()
