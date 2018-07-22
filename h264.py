@@ -24,7 +24,7 @@ class H264_Encoder:
         height = frames[0].height
 
         pipeline = Gst.Pipeline.new()
-        # appsrc - capsfilter - videoconvert - x264enc - rtp_payloader - appsink
+        # appsrc -> capsfilter -> videoconvert -> x264enc -> rtph264pay -> appsink
 
         appsrc = Gst.ElementFactory.make('appsrc')
         def frame_generator():
@@ -62,27 +62,24 @@ class H264_Encoder:
         pipeline.add(capsfilter)
         pipeline.add(videoconvert)
         pipeline.add(x264_encoder)
-        #pipeline.add(rtp_payloader)
-        #pipeline.add(appsink)
-        filesink = Gst.ElementFactory.make('filesink')
-        filesink.set_property('location', 'out.264')
-        pipeline.add(filesink)
+        pipeline.add(rtp_payloader)
+        pipeline.add(appsink)
 
         appsrc.link(capsfilter)
         capsfilter.link(videoconvert)
         videoconvert.link(x264_encoder)
-        #x264_encoder.link(rtp_payloader)
-        #rtp_payloader.link(appsink)
-        x264_encoder.link(filesink)
-
-        # pipeline.set_state(Gst.State.PLAYING)
+        x264_encoder.link(rtp_payloader)
+        rtp_payloader.link(appsink)
 
         return pipeline, appsrc, appsink
 
-    def encode(self, frames):
-        if len(frames) == 0:
-            raise Exception('H264_Encoder error: \'frames\' length should be greater than 0')
+    '''
+    Encodes raw video frames with H.264 and puts the result in RTP packages
 
+    :param frames: list of VideoFrame objects
+    :returns: binary representation of RTP packages
+    '''
+    def encode(self, frames):
         pipeline, appsrc, appsink = self.__create_pipeline(frames, 28, 'YUY2')
         # do stuff
 
