@@ -59,9 +59,8 @@ class H264_Encoder:
         x264_encoder = Gst.ElementFactory.make('x264enc')
         rtp_payloader = Gst.ElementFactory.make('rtph264pay')
         appsink = Gst.ElementFactory.make('appsink')
-        appsink.set_property("drop", True)
+        appsink.set_property("drop", True) # should we drop??
         appsink.set_property("max-buffers", MAX_BUFFERS)
-        appsink.set_property("sync", True)
         appsink.set_property("emit-signals", True)
 
         pipeline.add(appsrc)
@@ -80,7 +79,7 @@ class H264_Encoder:
         return pipeline, appsrc, appsink
 
     '''
-    Encodes raw video frames with H.264 and puts the result in RTP packages
+    Encodes raw video frames with H.264 and packages the result in RTP payloads
 
     :param frames: list of VideoFrame objects
     :returns: list of binary representations of RTP payloads
