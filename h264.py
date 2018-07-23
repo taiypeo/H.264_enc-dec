@@ -78,6 +78,7 @@ class H264_Encoder:
 
         return pipeline, appsrc, appsink
 
+
     '''
     Encodes raw video frames with H.264 and packages the result in RTP payloads
 
@@ -113,10 +114,108 @@ class H264_Encoder:
         if msg:
             if msg.type == Gst.MessageType.ERROR:
                 err, _ = msg.parse_error()
-                raise Exception('H264_Encoder error: pipeline failure: ' + err)
+                raise Exception('H264_Encoder error: pipeline failure: ' + err.message)
             elif msg.type != Gst.MessageType.EOS:
                 raise Exception('H264_Encoder error: pipeline failure: unknown error')
 
         pipeline.set_state(Gst.State.NULL)
 
         return payloads
+
+
+class H264_Decoder:
+    @staticmethod
+    def __create_pipeline(payloads):
+        if len(payloads) == 0:
+            raise Exception('H264_Decoder error: \'payloads\' length should be greater than 0')
+
+        pipeline = Gst.Pipeline.new()
+        # appsrc -> rtph264depay -> h264parse -> avdec_h264 -> videoconvert -> appsink
+
+        appsrc = Gst.ElementFactory.make('appsrc')
+        def payload_generator():
+            for payload in payloads:
+                yield payload
+
+        generator = payload_generator()
+
+        def feed_appsrc(bus, msg):
+            try:
+                payload = next(generator)
+                buf = Gst.Buffer.new_wrapped(payload)
+                appsrc.emit('push-buffer', buf)
+            except StopIteration:
+                appsrc.emit('end-of-stream')
+
+        appsrc.connect('need-data', feed_appsrc)
+
+        rtp_depayloader = Gst.ElementFactory.make('rtph264depay')
+        h264_parser = Gst.ElementFactory.make('h264parse')
+        h264_decoder = Gst.ElementFactory.make('avdec_h264')
+        videoconvert = Gst.ElementFactory.make('videoconvert')
+        appsink = Gst.ElementFactory.make('appsink')
+        appsink.set_property("drop", True) # should we drop??
+        appsink.set_property("max-buffers", MAX_BUFFERS)
+        appsink.set_property("emit-signals", True)
+
+        fakesink = Gst.ElementFactory.make('fakesink')
+
+        pipeline.add(appsrc)
+        pipeline.add(rtp_depayloader)
+        pipeline.add(fakesink)
+        appsrc.link(rtp_depayloader)
+        rtp_depayloader.link(fakesink)
+
+        '''
+        pipeline.add(rtp_depayloader)
+        pipeline.add(h264_parser)
+        pipeline.add(h264_decoder)
+        pipeline.add(videoconvert)
+        pipeline.add(appsink)
+        '''
+        '''
+        appsrc.link(rtp_depayloader)
+        rtp_depayloader.link(h264_parser)
+        h264_parser.link(h264_decoder)
+        h264_decoder.link(videoconvert)
+        videoconvert.link(appsink)
+        '''
+        return pipeline, appsrc, appsink
+
+
+    def decode(self, payloads):
+        pipeline, appsrc, appsink = self.__create_pipeline(payloads)
+
+        frames = []
+        def get_appsink_data(sink):
+            sample = sink.emit('pull-sample')
+            if not sample:
+                return
+            buf = sample.get_buffer()
+            status, info = buf.map(Gst.MapFlags.READ)
+            if not status:
+                raise Exception('H264_Encoder error: failed to map buffer data to GstMapInfo')
+            frames.append(info.data) # TODO: save as VideoFrame objects
+            buf.unmap(info)
+
+            return 0
+
+        appsink.connect('new-sample', get_appsink_data)
+
+        state = pipeline.set_state(Gst.State.PLAYING)
+        if state == Gst.StateChangeReturn.FAILURE:
+            raise Exception('H264_Encoder error: failed to set pipeline\'s state to PLAYING')
+
+        bus = pipeline.get_bus()
+        msg = bus.timed_pop_filtered(Gst.CLOCK_TIME_NONE,
+            Gst.MessageType.ERROR | Gst.MessageType.EOS)
+        if msg:
+            if msg.type == Gst.MessageType.ERROR:
+                err, _ = msg.parse_error()
+                raise Exception('H264_Encoder error: pipeline failure: ' + err.message)
+            elif msg.type != Gst.MessageType.EOS:
+                raise Exception('H264_Encoder error: pipeline failure: unknown error')
+
+        pipeline.set_state(Gst.State.NULL)
+
+        return frames
