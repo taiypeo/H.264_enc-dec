@@ -18,7 +18,7 @@ class VideoFrame:
 
 class H264_Encoder:
     @staticmethod
-    def __create_pipeline(frames, framerate=0, format='I420'):
+    def __create_pipeline(frames, framerate=0):
         if len(frames) == 0:
             raise Exception('H264_Encoder error: \'frames\' length should be greater than 0')
 
@@ -46,32 +46,36 @@ class H264_Encoder:
         appsrc.connect('need-data', feed_appsrc)
 
         caps = Gst.Caps.from_string(
-            'video/x-raw,format={},width={},height={},framerate={}/1'.format(
-                format,
+            'video/x-raw,format=I420,width={},height={},framerate={}/1'.format(
                 width,
                 height,
                 str(framerate)
             )
         )
-        capsfilter = Gst.ElementFactory.make('capsfilter')
-        capsfilter.set_property('caps', caps)
+        appsrc.set_property('caps', caps)
+
+        videoparse = Gst.ElementFactory.make('videoparse')
+        videoparse.set_property('width', width)
+        videoparse.set_property('height', height)
+        videoparse.set_property('framerate', Gst.Fraction(framerate))
+
         videoconvert = Gst.ElementFactory.make('videoconvert')
         x264_encoder = Gst.ElementFactory.make('x264enc')
         rtp_payloader = Gst.ElementFactory.make('rtph264pay')
         appsink = Gst.ElementFactory.make('appsink')
-        appsink.set_property("drop", True) # should we drop??
-        appsink.set_property("max-buffers", MAX_BUFFERS)
-        appsink.set_property("emit-signals", True)
+        appsink.set_property('drop', True) # should we drop??
+        appsink.set_property('max-buffers', MAX_BUFFERS)
+        appsink.set_property('emit-signals', True)
 
         pipeline.add(appsrc)
-        pipeline.add(capsfilter)
+        pipeline.add(videoparse)
         pipeline.add(videoconvert)
         pipeline.add(x264_encoder)
         pipeline.add(rtp_payloader)
         pipeline.add(appsink)
 
-        appsrc.link(capsfilter)
-        capsfilter.link(videoconvert)
+        appsrc.link(videoparse)
+        videoparse.link(videoconvert)
         videoconvert.link(x264_encoder)
         x264_encoder.link(rtp_payloader)
         rtp_payloader.link(appsink)
@@ -86,7 +90,7 @@ class H264_Encoder:
     :returns: list of binary representations of RTP payloads
     '''
     def encode(self, frames):
-        pipeline, appsrc, appsink = self.__create_pipeline(frames, 28, 'YUY2') # TODO: change parameters later
+        pipeline, appsrc, appsink = self.__create_pipeline(frames, 60) # TODO: change parameters later
 
         payloads = []
         def get_appsink_data(sink):
@@ -154,9 +158,9 @@ class H264_Decoder:
         h264_decoder = Gst.ElementFactory.make('avdec_h264')
         videoconvert = Gst.ElementFactory.make('videoconvert')
         appsink = Gst.ElementFactory.make('appsink')
-        appsink.set_property("drop", True) # should we drop??
-        appsink.set_property("max-buffers", MAX_BUFFERS)
-        appsink.set_property("emit-signals", True)
+        appsink.set_property('drop', True) # should we drop??
+        appsink.set_property('max-buffers', MAX_BUFFERS)
+        appsink.set_property('emit-signals', True)
 
         fakesink = Gst.ElementFactory.make('fakesink')
 

@@ -8,14 +8,13 @@ if __name__ == '__main__':
     Gst.init(None)
 
     frames = []
-    for i in range(58):
+    for i in range(100):
         file = open('test/frame' + str(i) + '.yuv', 'rb')
         data = file.read()
         file.close()
-        frames.append(VideoFrame(640, 480, data))
+        frames.append(VideoFrame(1920, 800, data))
     encoder = H264_Encoder()
     payloads = encoder.encode(frames)
-    print(len(payloads))
 
     decoder = H264_Decoder()
     frames = decoder.decode(payloads)
