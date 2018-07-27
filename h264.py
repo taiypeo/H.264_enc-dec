@@ -156,7 +156,6 @@ class H264_Decoder:
         def feed_appsrc(bus, msg):
             try:
                 payload = next(generator)
-                print('Wrapping next payload...')
                 buf = Gst.Buffer.new_wrapped(payload)
                 appsrc.emit('push-buffer', buf)
             except StopIteration:
@@ -210,13 +209,13 @@ class H264_Decoder:
         def get_appsink_data(sink):
             sample = sink.emit('pull-sample')
             if not sample:
-                print('No sample!')
+                return
             buf = sample.get_buffer()
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
                 raise Exception('H264_Decoder error: failed to map buffer data to GstMapInfo')
             frames.append(info.data) # TODO: save as VideoFrame objects
-            print('Appended to frames -', len(frames))
+            buf.unmap(info)
 
             return 0
 
