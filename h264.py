@@ -109,7 +109,7 @@ class H264_Encoder:
             payloads.append(info.data)
             buf.unmap(info)
 
-            return 0
+            return Gst.FlowReturn.OK
 
         appsink.connect('new-sample', get_appsink_data)
 
@@ -217,7 +217,7 @@ class H264_Decoder:
             frames.append(info.data) # TODO: save as VideoFrame objects
             buf.unmap(info)
 
-            return 0
+            return Gst.FlowReturn.OK
 
         appsink.connect('new-sample', get_appsink_data)
 
