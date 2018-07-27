@@ -26,9 +26,18 @@ class H264_Encoder:
         height = frames[0].height
 
         pipeline = Gst.Pipeline.new()
-        # appsrc -> videoparse -> videoconvert -> x264enc -> rtph264pay -> appsink
+        # appsrc -> rawvideoparse -> videoconvert -> x264enc -> rtph264pay -> appsink
 
         appsrc = Gst.ElementFactory.make('appsrc')
+        srccaps = Gst.Caps.from_string(
+            'video/x-raw,format=I420,width={},height={},framerate={}/1'.format(
+                width,
+                height,
+                str(framerate)
+            )
+        )
+        appsrc.set_property('caps', srccaps)
+
         def frame_generator():
             for frame in frames:
                 yield frame.data
@@ -45,16 +54,7 @@ class H264_Encoder:
 
         appsrc.connect('need-data', feed_appsrc)
 
-        srccaps = Gst.Caps.from_string(
-            'video/x-raw,format=I420,width={},height={},framerate={}/1'.format(
-                width,
-                height,
-                str(framerate)
-            )
-        )
-        appsrc.set_property('caps', srccaps)
-
-        videoparse = Gst.ElementFactory.make('videoparse')
+        videoparse = Gst.ElementFactory.make('rawvideoparse')
         videoparse.set_property('width', width)
         videoparse.set_property('height', height)
         videoparse.set_property('framerate', Gst.Fraction(framerate))
@@ -64,13 +64,13 @@ class H264_Encoder:
         rtp_payloader = Gst.ElementFactory.make('rtph264pay')
 
         appsink = Gst.ElementFactory.make('appsink')
-        appsink.set_property('drop', True) # should we drop??
-        appsink.set_property('max-buffers', MAX_BUFFERS)
-        appsink.set_property('emit-signals', True)
         rtpcaps = Gst.Caps.from_string(
             'application/x-rtp,payload=96,media=video,encoding-name=H264,clock-rate=90000'
         )
         appsink.set_property('caps', rtpcaps)
+        appsink.set_property('drop', True) # should we drop??
+        appsink.set_property('max-buffers', MAX_BUFFERS)
+        appsink.set_property('emit-signals', True)
 
         pipeline.add(appsrc)
         pipeline.add(videoparse)
@@ -103,10 +103,12 @@ class H264_Encoder:
             if not sample:
                 return
             buf = sample.get_buffer()
+            print('dts:', buf.dts)
+            print('Duration:', buf.duration)
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
                 raise Exception('H264_Encoder error: failed to map buffer data to GstMapInfo')
-            payloads.append(info.data)
+            payloads.append(buf)
             buf.unmap(info)
 
             return Gst.FlowReturn.OK
@@ -147,6 +149,11 @@ class H264_Decoder:
         # appsrc -> rtph264depay -> h264parse -> avdec_h264 -> videoconvert -> appsink
 
         appsrc = Gst.ElementFactory.make('appsrc')
+        rtpcaps = Gst.Caps.from_string(
+            'application/x-rtp,payload=96,media=video,encoding-name=H264,clock-rate=90000'
+        )
+        appsrc.set_property('caps', rtpcaps)
+
         def payload_generator():
             for payload in payloads:
                 yield payload
@@ -156,17 +163,12 @@ class H264_Decoder:
         def feed_appsrc(bus, msg):
             try:
                 payload = next(generator)
-                buf = Gst.Buffer.new_wrapped(payload)
-                appsrc.emit('push-buffer', buf)
+                #buf = Gst.Buffer.new_wrapped(payload)
+                appsrc.emit('push-buffer', payload)
             except StopIteration:
                 appsrc.emit('end-of-stream')
 
         appsrc.connect('need-data', feed_appsrc)
-
-        rtpcaps = Gst.Caps.from_string(
-            'application/x-rtp,payload=96,media=video,encoding-name=H264,clock-rate=90000'
-        )
-        appsrc.set_property('caps', rtpcaps)
 
         rtp_depayloader = Gst.ElementFactory.make('rtph264depay')
         h264_parser = Gst.ElementFactory.make('h264parse')
