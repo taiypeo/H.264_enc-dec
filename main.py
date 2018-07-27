@@ -16,7 +16,11 @@ if __name__ == '__main__':
     encoder = H264_Encoder()
     payloads = encoder.encode(frames)
 
+    print('Encoded! "payloads" length -', len(payloads))
+
     decoder = H264_Decoder()
     frames = decoder.decode(payloads)
+
+    print('Decoded!')
 
     GObject.MainLoop().run()

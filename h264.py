@@ -26,7 +26,7 @@ class H264_Encoder:
         height = frames[0].height
 
         pipeline = Gst.Pipeline.new()
-        # appsrc -> capsfilter -> videoconvert -> x264enc -> rtph264pay -> appsink
+        # appsrc -> videoparse -> videoconvert -> x264enc -> rtph264pay -> appsink
 
         appsrc = Gst.ElementFactory.make('appsrc')
         def frame_generator():
@@ -45,14 +45,14 @@ class H264_Encoder:
 
         appsrc.connect('need-data', feed_appsrc)
 
-        caps = Gst.Caps.from_string(
+        srccaps = Gst.Caps.from_string(
             'video/x-raw,format=I420,width={},height={},framerate={}/1'.format(
                 width,
                 height,
                 str(framerate)
             )
         )
-        appsrc.set_property('caps', caps)
+        appsrc.set_property('caps', srccaps)
 
         videoparse = Gst.ElementFactory.make('videoparse')
         videoparse.set_property('width', width)
@@ -62,10 +62,15 @@ class H264_Encoder:
         videoconvert = Gst.ElementFactory.make('videoconvert')
         x264_encoder = Gst.ElementFactory.make('x264enc')
         rtp_payloader = Gst.ElementFactory.make('rtph264pay')
+
         appsink = Gst.ElementFactory.make('appsink')
         appsink.set_property('drop', True) # should we drop??
         appsink.set_property('max-buffers', MAX_BUFFERS)
         appsink.set_property('emit-signals', True)
+        rtpcaps = Gst.Caps.from_string(
+            'application/x-rtp,payload=96,media=video,encoding-name=H264,clock-rate=90000'
+        )
+        appsink.set_property('caps', rtpcaps)
 
         pipeline.add(appsrc)
         pipeline.add(videoparse)
@@ -109,6 +114,7 @@ class H264_Encoder:
         appsink.connect('new-sample', get_appsink_data)
 
         state = pipeline.set_state(Gst.State.PLAYING)
+
         if state == Gst.StateChangeReturn.FAILURE:
             raise Exception('H264_Encoder error: failed to set pipeline\'s state to PLAYING')
 
@@ -122,10 +128,14 @@ class H264_Encoder:
             elif msg.type != Gst.MessageType.EOS:
                 raise Exception('H264_Encoder error: pipeline failure: unknown error')
 
+        #pad = rtp_payloader.get_static_pad('sink')
+        #encoded_caps = pad.get_current_caps()
+
         pipeline.set_state(Gst.State.NULL)
 
         return payloads
 
+##############################################################################
 
 class H264_Decoder:
     @staticmethod
@@ -146,12 +156,18 @@ class H264_Decoder:
         def feed_appsrc(bus, msg):
             try:
                 payload = next(generator)
+                print('Wrapping next payload...')
                 buf = Gst.Buffer.new_wrapped(payload)
                 appsrc.emit('push-buffer', buf)
             except StopIteration:
                 appsrc.emit('end-of-stream')
 
         appsrc.connect('need-data', feed_appsrc)
+
+        rtpcaps = Gst.Caps.from_string(
+            'application/x-rtp,payload=96,media=video,encoding-name=H264,clock-rate=90000'
+        )
+        appsrc.set_property('caps', rtpcaps)
 
         rtp_depayloader = Gst.ElementFactory.make('rtph264depay')
         h264_parser = Gst.ElementFactory.make('h264parse')
@@ -194,13 +210,13 @@ class H264_Decoder:
         def get_appsink_data(sink):
             sample = sink.emit('pull-sample')
             if not sample:
-                return
+                print('No sample!')
             buf = sample.get_buffer()
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
-                raise Exception('H264_Encoder error: failed to map buffer data to GstMapInfo')
+                raise Exception('H264_Decoder error: failed to map buffer data to GstMapInfo')
             frames.append(info.data) # TODO: save as VideoFrame objects
-            buf.unmap(info)
+            print('Appended to frames -', len(frames))
 
             return 0
 
@@ -208,7 +224,7 @@ class H264_Decoder:
 
         state = pipeline.set_state(Gst.State.PLAYING)
         if state == Gst.StateChangeReturn.FAILURE:
-            raise Exception('H264_Encoder error: failed to set pipeline\'s state to PLAYING')
+            raise Exception('H264_Decoder error: failed to set pipeline\'s state to PLAYING')
 
         bus = pipeline.get_bus()
         msg = bus.timed_pop_filtered(Gst.CLOCK_TIME_NONE,
@@ -216,9 +232,9 @@ class H264_Decoder:
         if msg:
             if msg.type == Gst.MessageType.ERROR:
                 err, _ = msg.parse_error()
-                raise Exception('H264_Encoder error: pipeline failure: ' + err.message)
+                raise Exception('H264_Decoder error: pipeline failure: ' + err.message)
             elif msg.type != Gst.MessageType.EOS:
-                raise Exception('H264_Encoder error: pipeline failure: unknown error')
+                raise Exception('H264_Decoder error: pipeline failure: unknown error')
 
         pipeline.set_state(Gst.State.NULL)
 
