@@ -89,7 +89,7 @@ class H264_Encoder:
 
 
     '''
-    Encodes raw video frames with H.264 and packages the result in RTP payloads
+    Encodes raw YUV420 video frames with H.264 and packages the result in RTP payloads
 
     :param frames: list of VideoFrame objects
     :returns: list of binary representations of RTP payloads
@@ -192,6 +192,12 @@ class H264_Decoder:
         return pipeline, appsrc, appsink
 
 
+    '''
+    Decodes H.264 RTP payloads to a list of raw YUV420 frames
+
+    :param payloads: list of binary representations of RTP payloads
+    :returns: list of VideoFrame objects
+    '''
     def decode(self, payloads):
         pipeline, appsrc, appsink = self.__create_pipeline(payloads)
 
