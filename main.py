@@ -22,10 +22,10 @@ if __name__ == '__main__':
     frames = decoder.decode(payloads)
 
     print('Decoded! "frames" length -', len(frames))
-
+    
     for i in range(len(frames)):
         file = open('test_out/frame' + str(i) + '.yuv', 'wb')
-        file.write(frames[i])
+        file.write(frames[i].data)
         file.close()
 
     print('Wrote frames')

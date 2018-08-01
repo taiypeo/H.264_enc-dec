@@ -175,7 +175,6 @@ class H264_Decoder:
         appsink.set_property('max-buffers', MAX_BUFFERS)
         appsink.set_property('emit-signals', True)
 
-
         pipeline.add(appsrc)
         pipeline.add(rtp_depayloader)
         pipeline.add(h264_parser)
@@ -210,7 +209,7 @@ class H264_Decoder:
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
                 raise Exception('H264_Decoder error: failed to map buffer data to GstMapInfo')
-            frames.append(info.data) # TODO: save as VideoFrame objects
+            frames.append(VideoFrame(0, 0, info.data))
             buf.unmap(info)
 
             return Gst.FlowReturn.OK
@@ -231,6 +230,24 @@ class H264_Decoder:
             elif msg.type != Gst.MessageType.EOS:
                 raise Exception('H264_Decoder error: pipeline failure: unknown error')
 
+        pad = appsink.get_static_pad('sink')
+        caps = pad.get_current_caps()
+        if caps is None:
+            raise Exception('H264_Decoder error: appsink caps is somehow None - report this')
+        structure = caps.get_structure(0)
+        if structure is None:
+            raise Exception('H264_Decoder error: appsink caps structure is somehow None - report this')
+
+        w_status, width = structure.get_int('width')
+        h_status, height = structure.get_int('height')
+
         pipeline.set_state(Gst.State.NULL)
+
+        if not w_status or not h_status:
+            raise Exception('H264_Decoder error: could not extract frame width and height from appsink')
+
+        for frame in frames:
+            frame.width = width
+            frame.height = height
 
         return frames
