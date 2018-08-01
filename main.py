@@ -21,6 +21,13 @@ if __name__ == '__main__':
     decoder = H264_Decoder()
     frames = decoder.decode(payloads)
 
-    print('Decoded!')
+    print('Decoded! "frames" length -', len(frames))
+
+    for i in range(len(frames)):
+        file = open('test_out/frame' + str(i) + '.yuv', 'wb')
+        file.write(frames[i])
+        file.close()
+
+    print('Wrote frames')
 
     GObject.MainLoop().run()

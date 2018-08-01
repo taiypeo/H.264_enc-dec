@@ -103,12 +103,10 @@ class H264_Encoder:
             if not sample:
                 return
             buf = sample.get_buffer()
-            print('dts:', buf.dts)
-            print('Duration:', buf.duration)
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
                 raise Exception('H264_Encoder error: failed to map buffer data to GstMapInfo')
-            payloads.append(buf)
+            payloads.append(info.data)
             buf.unmap(info)
 
             return Gst.FlowReturn.OK
@@ -130,9 +128,6 @@ class H264_Encoder:
             elif msg.type != Gst.MessageType.EOS:
                 raise Exception('H264_Encoder error: pipeline failure: unknown error')
 
-        #pad = rtp_payloader.get_static_pad('sink')
-        #encoded_caps = pad.get_current_caps()
-
         pipeline.set_state(Gst.State.NULL)
 
         return payloads
@@ -149,6 +144,7 @@ class H264_Decoder:
         # appsrc -> rtph264depay -> h264parse -> avdec_h264 -> videoconvert -> appsink
 
         appsrc = Gst.ElementFactory.make('appsrc')
+        appsrc.set_property('format', Gst.Format.TIME)
         rtpcaps = Gst.Caps.from_string(
             'application/x-rtp,payload=96,media=video,encoding-name=H264,clock-rate=90000'
         )
@@ -163,8 +159,8 @@ class H264_Decoder:
         def feed_appsrc(bus, msg):
             try:
                 payload = next(generator)
-                #buf = Gst.Buffer.new_wrapped(payload)
-                appsrc.emit('push-buffer', payload)
+                buf = Gst.Buffer.new_wrapped(payload)
+                appsrc.emit('push-buffer', buf)
             except StopIteration:
                 appsrc.emit('end-of-stream')
 
@@ -179,28 +175,20 @@ class H264_Decoder:
         appsink.set_property('max-buffers', MAX_BUFFERS)
         appsink.set_property('emit-signals', True)
 
-        fakesink = Gst.ElementFactory.make('fakesink')
 
         pipeline.add(appsrc)
-        pipeline.add(rtp_depayloader)
-        pipeline.add(fakesink)
-        appsrc.link(rtp_depayloader)
-        rtp_depayloader.link(fakesink)
-
-        '''
         pipeline.add(rtp_depayloader)
         pipeline.add(h264_parser)
         pipeline.add(h264_decoder)
         pipeline.add(videoconvert)
         pipeline.add(appsink)
-        '''
-        '''
+
         appsrc.link(rtp_depayloader)
         rtp_depayloader.link(h264_parser)
         h264_parser.link(h264_decoder)
         h264_decoder.link(videoconvert)
         videoconvert.link(appsink)
-        '''
+
         return pipeline, appsrc, appsink
 
 
