@@ -94,8 +94,8 @@ class H264_Encoder:
     :param frames: list of VideoFrame objects
     :returns: list of binary representations of RTP payloads
     '''
-    def encode(self, frames):
-        pipeline, appsrc, appsink = self.__create_pipeline(frames, 60) # TODO: change parameters later
+    def encode(self, frames, framerate=0):
+        pipeline, appsrc, appsink = self.__create_pipeline(frames, framerate)
 
         payloads = []
         def get_appsink_data(sink):
