@@ -3,6 +3,7 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
 import math
+from abc import ABC, abstractmethod
 
 MAX_BUFFERS = 100
 
@@ -16,18 +17,45 @@ class VideoFrame:
         else:
             self.data = data
 
-class H264_Encoder:
+##############################################################################
+
+class H264_Superclass(ABC):
+    def change_state(self, state):
+        state = self.pipeline.set_state(state)
+        if state == Gst.StateChangeReturn.FAILURE:
+            raise Exception('H264_Encoder error: failed to change pipeline\'s state to', str(state))
+
+    def __init__(self):
+        self.frames = []
+        self.payloads = []
+
+        self.create_pipeline()
+
+        self.change_state(Gst.State.READY)
+
+        super().__init__()
+
+    def __del__(self):
+        self.pipeline.set_state(Gst.State.NULL)
+
+    @abstractmethod
+    def create_pipeline(self):
+        pass
+
+##############################################################################
+
+class H264_Encoder(H264_Superclass):
     @staticmethod
-    def __create_srccaps(width, height):
+    def create_srccaps(width, height):
         CAPS_STR = 'video/x-raw,format=I420,width={},height={},framerate=0/1'
         return Gst.Caps.from_string(CAPS_STR.format(width, height))
 
-    def __create_pipeline(self):
+    def create_pipeline(self):
         self.pipeline = Gst.Pipeline.new()
         # appsrc -> rawvideoparse -> videoconvert -> x264enc -> rtph264pay -> appsink
 
         self.appsrc = Gst.ElementFactory.make('appsrc')
-        self.appsrc.set_property('caps', self.__create_srccaps(0, 0))
+        self.appsrc.set_property('caps', self.create_srccaps(0, 0))
 
         def feed_appsrc(bus, msg):
             if len(self.frames) == 0:
@@ -86,26 +114,10 @@ class H264_Encoder:
         rtp_payloader.link(self.appsink)
 
     def update_parameters(self, width, height):
-        self.appsrc.set_property('caps', self.__create_srccaps(width, height))
+        self.appsrc.set_property('caps', self.create_srccaps(width, height))
 
         self.videoparse.set_property('width', width)
         self.videoparse.set_property('height', height)
-
-    def change_state(self, state):
-        state = self.pipeline.set_state(state)
-        if state == Gst.StateChangeReturn.FAILURE:
-            raise Exception('H264_Encoder error: failed to change pipeline\'s state to', str(state))
-
-    def __init__(self):
-        self.frames = []
-        self.payloads = []
-
-        self.__create_pipeline()
-
-        self.change_state(Gst.State.READY)
-
-    def __del__(self):
-        self.pipeline.set_state(Gst.State.NULL)
 
     '''
     Encodes raw YUV420 video frames with H.264 and packages the result in RTP payloads
@@ -141,8 +153,8 @@ class H264_Encoder:
 
 ##############################################################################
 
-class H264_Decoder:
-    def __create_pipeline(self):
+class H264_Decoder(H264_Superclass):
+    def create_pipeline(self):
         self.pipeline = Gst.Pipeline.new()
         # appsrc -> rtph264depay -> h264parse -> avdec_h264 -> videoconvert -> appsink
 
@@ -201,23 +213,7 @@ class H264_Decoder:
         h264_decoder.link(videoconvert)
         videoconvert.link(self.appsink)
 
-    def change_state(self, state):
-        state = self.pipeline.set_state(state)
-        if state == Gst.StateChangeReturn.FAILURE:
-            raise Exception('H264_Encoder error: failed to change pipeline\'s state to', str(state))
-
-    def __init__(self):
-        self.payloads = []
-        self.frames = []
-
-        self.__create_pipeline()
-
-        self.change_state(Gst.State.READY)
-
-    def __del__(self):
-        self.pipeline.set_state(Gst.State.NULL)
-
-    def __update_frames_sizes(self):
+    def update_frames_sizes(self):
         pad = self.appsink.get_static_pad('sink')
         caps = pad.get_current_caps()
         if caps is None:
@@ -259,7 +255,7 @@ class H264_Decoder:
             elif msg.type != Gst.MessageType.EOS:
                 raise Exception('H264_Decoder error: pipeline failure: unknown error')
 
-        self.__update_frames_sizes()
+        self.update_frames_sizes()
 
         self.change_state(Gst.State.READY)
 
