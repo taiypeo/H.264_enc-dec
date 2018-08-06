@@ -1,11 +1,9 @@
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst
-
 import time
 import os
 
 from h264 import *
+
+# Example usage of the library
 
 if __name__ == '__main__':
     Gst.init(None)
