@@ -151,7 +151,7 @@ class H264_Encoder(H264_Superclass):
     '''
     Encodes raw YUV420 video frames with H.264 and packages the result in RTP payloads
 
-    :param frames: list of VideoFrame objects with *same* width and height
+    :param frames: list of VideoFrame objects with the *same* width and height
     :returns: list of binary representations of RTP payloads
     '''
     def encode(self, frames):
