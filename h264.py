@@ -19,11 +19,40 @@ class VideoFrame:
 
 ##############################################################################
 
+class H264_Exception(Exception): # made for easy catching of both types
+    pass
+
+class H264_Encoder_Exception(H264_Exception):
+    pass
+
+class H264_Decoder_Exception(H264_Exception):
+    pass
+
+##############################################################################
+
 class H264_Superclass(ABC):
+    def error(self, err_msg):
+        if type(self) == H264_Encoder:
+            raise H264_Encoder_Exception(err_msg)
+        elif type(self) == H264_Decoder:
+            raise H264_Decoder_Exception(err_msg)
+        else:
+            raise Exception(err_msg)
+
     def change_state(self, state):
         state = self.pipeline.set_state(state)
         if state == Gst.StateChangeReturn.FAILURE:
-            raise Exception('H264_Encoder error: failed to change pipeline\'s state to', str(state))
+            self.error('Failed to change pipeline\'s state to ' + str(state))
+
+    def wait_for_pipeline(self):
+        msg = self.pipeline.get_bus().timed_pop_filtered(Gst.CLOCK_TIME_NONE,
+            Gst.MessageType.ERROR | Gst.MessageType.EOS)
+        if msg:
+            if msg.type == Gst.MessageType.ERROR:
+                err, _ = msg.parse_error()
+                self.error('Pipeline failure: ' + err.message)
+            elif msg.type != Gst.MessageType.EOS:
+                self.error('Pipeline failure: unknown error')
 
     def __init__(self):
         self.frames = []
@@ -92,7 +121,7 @@ class H264_Encoder(H264_Superclass):
             buf = sample.get_buffer()
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
-                raise Exception('H264_Encoder error: failed to map buffer data to GstMapInfo')
+                self.error('Failed to map buffer data to GstMapInfo')
             self.payloads.append(info.data)
             buf.unmap(info)
 
@@ -127,20 +156,13 @@ class H264_Encoder(H264_Superclass):
     '''
     def encode(self, frames):
         if len(frames) == 0:
-            raise Exception('H264_Encoder error: \'frames\' length should be greater than 0')
+            self.error('\'frames\' length should be greater than 0')
 
         self.frames = frames
         self.update_parameters(frames[0].width, frames[0].height)
         self.change_state(Gst.State.PLAYING)
 
-        msg = self.pipeline.get_bus().timed_pop_filtered(Gst.CLOCK_TIME_NONE,
-            Gst.MessageType.ERROR | Gst.MessageType.EOS)
-        if msg:
-            if msg.type == Gst.MessageType.ERROR:
-                err, _ = msg.parse_error()
-                raise Exception('H264_Encoder error: pipeline failure: ' + err.message)
-            elif msg.type != Gst.MessageType.EOS:
-                raise Exception('H264_Encoder error: pipeline failure: unknown error')
+        self.wait_for_pipeline()
 
         self.change_state(Gst.State.READY)
 
@@ -192,7 +214,7 @@ class H264_Decoder(H264_Superclass):
             buf = sample.get_buffer()
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
-                raise Exception('H264_Decoder error: failed to map buffer data to GstMapInfo')
+                self.error('Failed to map buffer data to GstMapInfo')
             self.frames.append(VideoFrame(0, 0, info.data))
             buf.unmap(info)
 
@@ -217,16 +239,16 @@ class H264_Decoder(H264_Superclass):
         pad = self.appsink.get_static_pad('sink')
         caps = pad.get_current_caps()
         if caps is None:
-            raise Exception('H264_Decoder error: appsink caps is somehow None - report this')
+            self.error('Appsink caps is somehow None - report this')
         structure = caps.get_structure(0)
         if structure is None:
-            raise Exception('H264_Decoder error: appsink caps structure is somehow None - report this')
+            self.error('Appsink caps structure is somehow None - report this')
 
         w_status, width = structure.get_int('width')
         h_status, height = structure.get_int('height')
 
         if not w_status or not h_status:
-            raise Exception('H264_Decoder error: could not extract frame width and height from appsink')
+            self.error('Could not extract frame width and height from appsink')
 
         for frame in self.frames:
             frame.width = width
@@ -240,20 +262,13 @@ class H264_Decoder(H264_Superclass):
     '''
     def decode(self, payloads):
         if len(payloads) == 0:
-            raise Exception('H264_Decoder error: \'payloads\' length should be greater than 0')
+            self.error('\'payloads\' length should be greater than 0')
 
         self.payloads = payloads
 
         self.change_state(Gst.State.PLAYING)
 
-        msg = self.pipeline.get_bus().timed_pop_filtered(Gst.CLOCK_TIME_NONE,
-            Gst.MessageType.ERROR | Gst.MessageType.EOS)
-        if msg:
-            if msg.type == Gst.MessageType.ERROR:
-                err, _ = msg.parse_error()
-                raise Exception('H264_Decoder error: pipeline failure: ' + err.message)
-            elif msg.type != Gst.MessageType.EOS:
-                raise Exception('H264_Decoder error: pipeline failure: unknown error')
+        self.wait_for_pipeline()
 
         self.update_frames_sizes()
 
