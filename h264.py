@@ -142,72 +142,37 @@ class H264_Encoder:
 ##############################################################################
 
 class H264_Decoder:
-    @staticmethod
-    def __create_pipeline(payloads):
-        if len(payloads) == 0:
-            raise Exception('H264_Decoder error: \'payloads\' length should be greater than 0')
-
-        pipeline = Gst.Pipeline.new()
+    def __create_pipeline(self):
+        self.pipeline = Gst.Pipeline.new()
         # appsrc -> rtph264depay -> h264parse -> avdec_h264 -> videoconvert -> appsink
 
-        appsrc = Gst.ElementFactory.make('appsrc')
-        appsrc.set_property('format', Gst.Format.TIME)
+        self.appsrc = Gst.ElementFactory.make('appsrc')
+        self.appsrc.set_property('format', Gst.Format.TIME)
         rtpcaps = Gst.Caps.from_string(
             'application/x-rtp,payload=96,media=video,encoding-name=H264,clock-rate=90000'
         )
-        appsrc.set_property('caps', rtpcaps)
-
-        def payload_generator():
-            for payload in payloads:
-                yield payload
-
-        generator = payload_generator()
+        self.appsrc.set_property('caps', rtpcaps)
 
         def feed_appsrc(bus, msg):
-            try:
-                payload = next(generator)
-                buf = Gst.Buffer.new_wrapped(payload)
-                appsrc.emit('push-buffer', buf)
-            except StopIteration:
-                appsrc.emit('end-of-stream')
+            if len(self.payloads) == 0:
+                self.appsrc.emit('end-of-stream')
+            else:
+                buf = Gst.Buffer.new_wrapped(self.payloads[0])
+                self.appsrc.emit('push-buffer', buf)
+                del(self.payloads[0])
 
-        appsrc.connect('need-data', feed_appsrc)
+        self.appsrc.connect('need-data', feed_appsrc)
 
         rtp_depayloader = Gst.ElementFactory.make('rtph264depay')
         h264_parser = Gst.ElementFactory.make('h264parse')
         h264_decoder = Gst.ElementFactory.make('avdec_h264')
         videoconvert = Gst.ElementFactory.make('videoconvert')
-        appsink = Gst.ElementFactory.make('appsink')
-        appsink.set_property('drop', True) # should we drop??
-        appsink.set_property('max-buffers', MAX_BUFFERS)
-        appsink.set_property('emit-signals', True)
 
-        pipeline.add(appsrc)
-        pipeline.add(rtp_depayloader)
-        pipeline.add(h264_parser)
-        pipeline.add(h264_decoder)
-        pipeline.add(videoconvert)
-        pipeline.add(appsink)
+        self.appsink = Gst.ElementFactory.make('appsink')
+        self.appsink.set_property('drop', True) # should we drop??
+        self.appsink.set_property('max-buffers', MAX_BUFFERS)
+        self.appsink.set_property('emit-signals', True)
 
-        appsrc.link(rtp_depayloader)
-        rtp_depayloader.link(h264_parser)
-        h264_parser.link(h264_decoder)
-        h264_decoder.link(videoconvert)
-        videoconvert.link(appsink)
-
-        return pipeline, appsrc, appsink
-
-
-    '''
-    Decodes H.264 RTP payloads to a list of raw YUV420 frames
-
-    :param payloads: list of binary representations of RTP payloads
-    :returns: list of VideoFrame objects
-    '''
-    def decode(self, payloads):
-        pipeline, appsrc, appsink = self.__create_pipeline(payloads)
-
-        frames = []
         def get_appsink_data(sink):
             sample = sink.emit('pull-sample')
             if not sample:
@@ -216,28 +181,44 @@ class H264_Decoder:
             status, info = buf.map(Gst.MapFlags.READ)
             if not status:
                 raise Exception('H264_Decoder error: failed to map buffer data to GstMapInfo')
-            frames.append(VideoFrame(0, 0, info.data))
+            self.frames.append(VideoFrame(0, 0, info.data))
             buf.unmap(info)
 
             return Gst.FlowReturn.OK
 
-        appsink.connect('new-sample', get_appsink_data)
+        self.appsink.connect('new-sample', get_appsink_data)
 
-        state = pipeline.set_state(Gst.State.PLAYING)
+        self.pipeline.add(self.appsrc)
+        self.pipeline.add(rtp_depayloader)
+        self.pipeline.add(h264_parser)
+        self.pipeline.add(h264_decoder)
+        self.pipeline.add(videoconvert)
+        self.pipeline.add(self.appsink)
+
+        self.appsrc.link(rtp_depayloader)
+        rtp_depayloader.link(h264_parser)
+        h264_parser.link(h264_decoder)
+        h264_decoder.link(videoconvert)
+        videoconvert.link(self.appsink)
+
+    def change_state(self, state):
+        state = self.pipeline.set_state(state)
         if state == Gst.StateChangeReturn.FAILURE:
-            raise Exception('H264_Decoder error: failed to set pipeline\'s state to PLAYING')
+            raise Exception('H264_Encoder error: failed to change pipeline\'s state to', str(state))
 
-        bus = pipeline.get_bus()
-        msg = bus.timed_pop_filtered(Gst.CLOCK_TIME_NONE,
-            Gst.MessageType.ERROR | Gst.MessageType.EOS)
-        if msg:
-            if msg.type == Gst.MessageType.ERROR:
-                err, _ = msg.parse_error()
-                raise Exception('H264_Decoder error: pipeline failure: ' + err.message)
-            elif msg.type != Gst.MessageType.EOS:
-                raise Exception('H264_Decoder error: pipeline failure: unknown error')
+    def __init__(self):
+        self.payloads = []
+        self.frames = []
 
-        pad = appsink.get_static_pad('sink')
+        self.__create_pipeline()
+
+        self.change_state(Gst.State.READY)
+
+    def __del__(self):
+        self.pipeline.set_state(Gst.State.NULL)
+
+    def __update_frames_sizes(self):
+        pad = self.appsink.get_static_pad('sink')
         caps = pad.get_current_caps()
         if caps is None:
             raise Exception('H264_Decoder error: appsink caps is somehow None - report this')
@@ -248,13 +229,43 @@ class H264_Decoder:
         w_status, width = structure.get_int('width')
         h_status, height = structure.get_int('height')
 
-        pipeline.set_state(Gst.State.NULL)
-
         if not w_status or not h_status:
             raise Exception('H264_Decoder error: could not extract frame width and height from appsink')
 
-        for frame in frames:
+        for frame in self.frames:
             frame.width = width
             frame.height = height
 
-        return frames
+    '''
+    Decodes H.264 RTP payloads to a list of raw YUV420 frames
+
+    :param payloads: list of binary representations of RTP payloads
+    :returns: list of VideoFrame objects
+    '''
+    def decode(self, payloads):
+        if len(payloads) == 0:
+            raise Exception('H264_Decoder error: \'payloads\' length should be greater than 0')
+
+        self.payloads = payloads
+
+        self.change_state(Gst.State.PLAYING)
+
+        msg = self.pipeline.get_bus().timed_pop_filtered(Gst.CLOCK_TIME_NONE,
+            Gst.MessageType.ERROR | Gst.MessageType.EOS)
+        if msg:
+            if msg.type == Gst.MessageType.ERROR:
+                err, _ = msg.parse_error()
+                raise Exception('H264_Decoder error: pipeline failure: ' + err.message)
+            elif msg.type != Gst.MessageType.EOS:
+                raise Exception('H264_Decoder error: pipeline failure: unknown error')
+
+        self.__update_frames_sizes()
+
+        self.change_state(Gst.State.READY)
+
+        current_frames = self.frames
+
+        self.payloads = []
+        self.frames = []
+
+        return current_frames
