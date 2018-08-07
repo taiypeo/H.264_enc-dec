@@ -46,7 +46,7 @@ if __name__ == '__main__':
         _, info = buf.map(Gst.MapFlags.READ)
         frame = VideoFrame(1280, 720, info.data)
         webcam_frames.append(frame)
-        payloads.extend(encoder.encode([frame]))
+        payloads.extend(encoder.encode(frame))
         buf.unmap(info)
 
         return Gst.FlowReturn.OK

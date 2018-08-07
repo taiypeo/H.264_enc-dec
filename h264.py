@@ -74,6 +74,10 @@ class H264_Superclass(ABC):
 ##############################################################################
 
 class H264_Encoder(H264_Superclass):
+    def __init__(self):
+        self.last_parameters = (0, 0)
+        super().__init__()
+
     @staticmethod
     def create_srccaps(width, height):
         CAPS_STR = 'video/x-raw,format=I420,width={},height={},framerate=0/1'
@@ -143,18 +147,24 @@ class H264_Encoder(H264_Superclass):
         rtp_payloader.link(self.appsink)
 
     def update_parameters(self, width, height):
-        self.appsrc.set_property('caps', self.create_srccaps(width, height))
+        if not self.last_parameters or self.last_parameters != (width, height):
+            self.appsrc.set_property('caps', self.create_srccaps(width, height))
 
-        self.videoparse.set_property('width', width)
-        self.videoparse.set_property('height', height)
+            self.videoparse.set_property('width', width)
+            self.videoparse.set_property('height', height)
+
+            self.last_parameters = (width, height)
 
     '''
     Encodes raw YUV420 video frames with H.264 and packages the result in RTP payloads
 
-    :param frames: list of VideoFrame objects with the *same* width and height
+    :param frames: list of VideoFrame objects with the *same* width and height / single VideoFrame object
     :returns: list of binary representations of RTP payloads
     '''
     def encode(self, frames):
+        if type(frames) == VideoFrame:
+            frames = [frames]
+
         if len(frames) == 0:
             self.error('\'frames\' length should be greater than 0')
 
